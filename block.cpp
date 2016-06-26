@@ -90,3 +90,13 @@ void block::union_all6(){
 
     return ;
 }
+
+void block::output_parent(const char* address_parent){
+    
+    FILE *file_parent = fopen(address_parent, "wb");
+
+    fwrite( (char*)(&this->parent_[0]), 4, this->parent_.size(), file_parent );
+
+    fclose(file_parent);
+    return;
+}

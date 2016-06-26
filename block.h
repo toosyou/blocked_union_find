@@ -68,6 +68,8 @@ public:
             int byte_voxel,  int threshold = 17000);
 
     void union_all6();
+
+    void output_parent(const char* address_parent);
 };
 
 #endif
