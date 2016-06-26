@@ -41,6 +41,18 @@ class block{
         return index;
     }
 
+    bool union_parent_(unsigned int index_a, unsigned int index_b){
+        
+        int root_a = find_parent_(index_a);
+        int root_b = find_parent_(index_b);
+        if(root_a == root_b){
+            return false;
+        }
+
+        parent_[root_a] = root_b;
+        return true;
+    }
+
 public:
     
     block(){
