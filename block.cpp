@@ -4,6 +4,7 @@ void block::read_raw(const char* address_raw, int size,
         int byte_voxel,  int threshold){
     
     //init value_
+    this->threshold_ = threshold;
     this->value_.clear();
     this->value_.resize(size);
     for(int i=0;i<size;++i){
@@ -57,7 +58,8 @@ void block::union_all6(){
 
                 unsigned index_now = i*size_value*size_value +
                                         j*size_value + k;
-
+                
+                //surrounding 6 voxels
                 for(int ii=-1;ii<=1;++ii){
                     for(int jj=-1;jj<=1;++jj){
                         for(int kk=-1;kk<=1;++kk){
@@ -83,9 +85,14 @@ void block::union_all6(){
 
                         }
                     }
-                }
+                }//surrounding 6 voxels
             }
         }
+    }
+
+    //find all again
+    for(unsigned int i=0;i<this->parent_.size();++i){
+        this->find_parent_(i);
     }
 
     return ;
