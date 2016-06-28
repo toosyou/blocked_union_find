@@ -296,7 +296,7 @@ public:
         int size_total = size_block_ * number_block_side_;
         int size_parent_block = this->size_block_ * this->size_block_ * this->size_block_;
         int number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
-        progressbar *progress = progressbar_new("Init parent", size_total);
+        progressbar *progress = progressbar_new("Init parent", number_block);
 
         for(int index_block = 0;index_block < number_block; ++index_block){
 #pragma omp parallel for
