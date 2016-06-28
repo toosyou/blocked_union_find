@@ -108,6 +108,26 @@ void block::output_parent(const char* address_parent){
     return;
 }
 
+long long int index_parent(int size_block, int number_block_side, int index_block, int index_remain){
+
+    long long int number_block_side2 = number_block_side * number_block_side;
+    long long int size_block2 = size_block * size_block;
+
+    int index_block_z = index_block / number_block_side2;
+    int index_block_y = (index_block % number_block_side2) / number_block_side;
+    int index_block_x = index_block % number_block_side;
+    
+    int z_block = index_remain / size_block2;
+    int y_block = (index_remain % size_block2) / size_block ;
+    int x_block = index_remain % size_block;
+
+    int x = index_block_x * size_block + x_block;
+    int y = index_block_y * size_block + y_block;
+    int z = index_block_z * size_block + z_block;
+
+    return ((long long int)z)*number_block_side2*size_block2 + ((long long int)y)*number_block_side*size_block + (long long int)x;
+}
+
 void multi_block::union_all6(int threshold){
     
     int total_size = this->size_block_ * this->number_block_side_;

@@ -111,9 +111,9 @@ struct block_coordinate{
             index_block_y * this->number_block_side +
             index_block_x;
 
-        int remained_x = input_x - index_block_x * this->size_block;
-        int remained_y = input_y - index_block_y * this->size_block;
-        int remained_z = input_z - index_block_z * this->size_block;
+        int remained_x = input_x % this->size_block;
+        int remained_y = input_y % this->size_block;
+        int remained_z = input_z % this->size_block;
         this->index_remain = remained_z * this->size_block * this->size_block +
                             remained_y * this->size_block +
                             remained_x;
@@ -124,10 +124,11 @@ struct block_coordinate{
     }
 
     void convert_from(long long int whole){
+        int new_size_block2 = new_size_block & new_size_block;
         this->index_whole = whole;
-        this->z = index_whole / (new_size_block * new_size_block);
-        this->y = (index_whole - ((long long int)this->z)*(new_size_block * new_size_block)) / new_size_block;
-        this->x = index_whole - ((long long int)this->z)*(new_size_block * new_size_block) - ((long long int)this->y) * new_size_block;
+        this->z = index_whole / (new_size_block2);
+        this->y = (index_whole % new_size_block2)/ new_size_block;
+        this->x = index_whole % new_size_block ;
         
         int index_block_x = x / this->size_block;
         int index_block_y = y / this->size_block;
@@ -136,9 +137,9 @@ struct block_coordinate{
             index_block_y * this->number_block_side +
             index_block_x;
 
-        int remained_x = x - index_block_x * this->size_block;
-        int remained_y = y - index_block_y * this->size_block;
-        int remained_z = z - index_block_z * this->size_block;
+        int remained_x = x % this->size_block;
+        int remained_y = y % this->size_block;
+        int remained_z = z % this->size_block;
         this->index_remain = remained_z * this->size_block * this->size_block +
                             remained_y * this->size_block +
                             remained_x;
@@ -147,6 +148,8 @@ struct block_coordinate{
     }
 
 };
+
+long long int index_parent(int size_block, int number_block_side, int index_block, int index_reamin);
 
 class multi_block{
     vector<int16_t*> mmap_blocks_;
@@ -291,17 +294,15 @@ public:
     void init_parent(void){
 
         int size_total = size_block_ * number_block_side_;
+        int size_parent_block = this->size_block_ * this->size_block_ * this->size_block_;
+        int number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
         progressbar *progress = progressbar_new("Init parent", size_total);
+
+        for(int index_block = 0;index_block < number_block; ++index_block){
 #pragma omp parallel for
-        for(int x=0;x<size_total;++x){
-            for(int y=0;y<size_total;++y){
-                for(int z=0;z<size_total;++z){
-                    block_coordinate coor(this->size_block_, this->number_block_side_);
-                    coor.convert_from(x, y, z);
-                    this->mmap_parents_[coor.index_block][coor.index_remain] = coor.index_whole;
-                }
+            for(int index_remain = 0;index_remain < size_parent_block;++index_remain){
+                this->mmap_parents_[index_block][index_remain] = index_parent(this->size_block_, this->number_block_side_, index_block, index_remain); 
             }
-#pragma omp critical
             progressbar_inc(progress);
         }
 

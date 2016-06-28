@@ -15,7 +15,7 @@ int main(){
    
     mkdir(PREFIX_PRTS, 0755);
 
-    multi_block blocks(PREFIX_RAW, 64, 530, PREFIX_PRTS);
+    multi_block blocks(PREFIX_RAW, 1, 530, PREFIX_PRTS);
     blocks.union_all6(17000);
 
     return 0;
