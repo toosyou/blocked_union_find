@@ -63,7 +63,7 @@ void block::union_all6(){
                 for(int ii=-1;ii<=1;++ii){
                     for(int jj=-1;jj<=1;++jj){
                         for(int kk=-1;kk<=1;++kk){
-                            if( abs(ii)+abs(jj)+abs(kk) > 1 )
+                            if( abs(ii)+abs(jj)+abs(kk) != 1 )
                                 continue;
                             int new_z = i+ii;
                             int new_y = j+jj;
@@ -106,4 +106,62 @@ void block::output_parent(const char* address_parent){
 
     fclose(file_parent);
     return;
+}
+
+void multi_block::union_all6(int threshold){
+    
+    int total_size = this->size_block_ * this->number_block_side_;
+
+    //init
+    this->init_parent();
+
+    for(int x=0;x<total_size;++x){
+        for(int y=0;y<total_size;++y){
+            for(int z=0;z<total_size;++z){
+
+                //it's below threshold wont be connected
+                if(this->value(x, y, z) < threshold){
+                    this->write_parent(x, y, z, 0ll);
+                    continue;
+                }
+
+                //surrounding 6 points
+                for(int dx=-1;dx<=1;++dx){
+                    for(int dy=-1;dy<=1;++dy){
+                        for(int dz=-1;dz<=1;++dz){
+
+                            //only check surrounding 6 points
+                            if( abs(dx) + abs(dy) + abs(dz) != 1 )
+                                continue;
+                            //check boundary
+                            if( x+dx < 0 || x+dx >= total_size ||
+                                    y+dy < 0 || y+dy >= total_size ||
+                                    z+dz < 0 || z+dz >= total_size)
+                                continue;
+
+                            //threshold check
+                            if( this->value(x+dx, y+dy, z+dz) < threshold )
+                                continue;
+
+                            this->union_parent_(x, y, z, x+dx, y+dy, z+dz);
+
+                        }
+                    }
+                }//surrounding 6 points
+                
+            }
+        }
+    }
+
+    //find all again
+    for(int x=0;x<total_size;++x){
+        for(int y=0;y<total_size;++y){
+            for(int z=0;z<total_size;++z){
+                if(this->value(x, y, z) >= threshold)
+                    this->find_parent_( x, y, z );
+            }
+        }
+    }
+    
+    return ;
 }

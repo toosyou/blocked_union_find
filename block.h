@@ -78,6 +78,7 @@ public:
 struct block_coordinate{
     int size_block;
     int number_block_side;
+    long long int new_size_block;
 
     int index_block;
     int index_remain;
@@ -93,6 +94,7 @@ struct block_coordinate{
     block_coordinate(int sb, int nbs){
         this->size_block = sb;
         this->number_block_side = nbs;
+        this->new_size_block = (long long int)number_block_side * (long long int)size_block;
     }
 
     void convert_from(int input_x, int input_y, int input_z){
@@ -114,10 +116,34 @@ struct block_coordinate{
                             remained_y * this->size_block +
                             remained_x;
 
-        long long int new_size_block = (long long int)number_block_side * (long long int)size_block ;
-
         this->index_whole = (long long int)z * new_size_block * new_size_block + (long long int)y * new_size_block + (long long int)x;
+
+        return;
     }
+
+    void convert_from(long long int whole){
+        this->index_whole = whole;
+        this->z = index_whole / (new_size_block * new_size_block);
+        this->y = (index_whole - ((long long int)this->z)*(new_size_block * new_size_block)) / new_size_block;
+        this->x = index_whole - ((long long int)this->z)*(new_size_block * new_size_block) - ((long long int)this->y) * new_size_block;
+        
+        int index_block_x = x / this->size_block;
+        int index_block_y = y / this->size_block;
+        int index_block_z = z / this->size_block;
+        this->index_block = index_block_z * this->number_block_side * this->number_block_side +
+            index_block_y * this->number_block_side +
+            index_block_x;
+
+        int remained_x = x - index_block_x * this->size_block;
+        int remained_y = y - index_block_y * this->size_block;
+        int remained_z = z - index_block_z * this->size_block;
+        this->index_remain = remained_z * this->size_block * this->size_block +
+                            remained_y * this->size_block +
+                            remained_x;
+
+        return;
+    }
+
 };
 
 class multi_block{
@@ -132,6 +158,39 @@ class multi_block{
     string directory_blocks_;
     string directory_parent_;
 
+    long long int find_parent_(int x, int y, int z){
+        block_coordinate coor(this->size_block_, this->number_block_side_);
+        coor.convert_from(x, y, z);
+        vector<block_coordinate> optimising_list;
+
+        while( this->mmap_parents_[coor.index_block][coor.index_remain] != coor.index_whole ){
+            optimising_list.push_back(coor);
+            coor.convert_from( this->mmap_parents_[coor.index_block][coor.index_remain] );
+        }
+
+        //optimise
+        for(unsigned int i=0;i<optimising_list.size();++i){
+            block_coordinate &this_coor = optimising_list[i];
+            this->mmap_parents_[this_coor.index_block][this_coor.index_remain] = coor.index_whole;
+        }
+
+        return coor.index_whole;
+    }
+
+    bool union_parent_(int xa, int ya, int za, int xb, int yb, int zb){
+        long long int root_a = this->find_parent_(xa, ya, za);
+        long long int root_b = this->find_parent_(xb, yb, zb);
+        if( root_a == root_b )//no need to union
+            return false;
+
+        block_coordinate coor_a(this->size_block_, this->number_block_side_);
+        block_coordinate coor_b(this->size_block_, this->number_block_side_);
+        coor_a.convert_from(xa, ya, za);
+        coor_b.convert_from(xb, yb, zb);
+        this->mmap_parents_[coor_b.index_block][coor_b.index_remain] = coor_a.index_whole;
+        
+        return true;
+    }
 
 public:
 
@@ -176,6 +235,7 @@ public:
         chdir(directory_parent);
 
         //mapping parent files
+#pragma omp parallel for
         for(int i=0;i<number_raw;++i){
             char address_parent[200] = {0};
             int fd_parent = -1;
@@ -211,7 +271,15 @@ public:
         return (int)this->mmap_blocks_[coor.index_block][coor.index_remain];
     }
 
+    void write_parent(int x, int y, int z, long long int parent){
+        block_coordinate coor(this->size_block_, this->number_block_side_);
+        coor.convert_from(x, y, z);
+        this->mmap_parents_[coor.index_block][coor.index_remain] = parent;
+        return ;
+    }
+
     void init_parent(void){
+#pragma omp parallel for
         for(int x=0;x<size_block_*number_block_side_;++x){
             for(int y=0;y<size_block_*number_block_side_;++y){
                 for(int z=0;z<size_block_*number_block_side_;++z){
@@ -224,7 +292,7 @@ public:
         return;
     }
 
-    void union_all6(int threshold);
+    void union_all6(int threshold=17000);
 };
 
 #endif
