@@ -10,6 +10,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <math.h>
+#include "progressbar.h"
+#include "statusbar.h"
 
 using namespace std;
 
@@ -153,7 +155,7 @@ class multi_block{
 
     int size_block_;
     int number_block_side_;
-    int size_parent_;
+    unsigned int size_parent_;
 
     string directory_blocks_;
     string directory_parent_;
@@ -206,14 +208,16 @@ public:
         this->directory_parent_ = string(directory_parent);
         this->mmap_blocks_.resize(number_raw, NULL);
         this->stat_blocks_.resize(number_raw);
+        this->mmap_parents_.resize(number_raw, NULL);
         this->size_block_ = size;
-        this->number_block_side_ = (int)(pow(number_raw, 1/3) + 0.5);
+        this->number_block_side_ = (int)(pow(number_raw, 1.0/3.0) + 0.5);
 
         char original_directory[200] = {0};
         getcwd(original_directory, 200);
         chdir(directory_blocks);
 
         //mapping raw blocks
+#pragma omp parallel for
         for(int i=0;i<number_raw;++i){
             char address_raw[200] = {0};
             int fd_raw = -1;
@@ -237,6 +241,7 @@ public:
         //mapping parent files
 #pragma omp parallel for
         for(int i=0;i<number_raw;++i){
+            //cerr << "mapping " << i << "th .prt" <<endl;
             char address_parent[200] = {0};
             int fd_parent = -1;
             
@@ -250,6 +255,11 @@ public:
             
             //mapping
             this->mmap_parents_[i] = (long long int*)mmap(NULL, this->size_parent_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_parent, 0);
+            if(this->mmap_parents_[i] == MAP_FAILED){
+                cerr << i << "th PARENT MMAP ERROR!" <<endl;
+                close(fd_parent);
+                exit(-1);
+            }
 
             close(fd_parent);
         }
@@ -279,16 +289,23 @@ public:
     }
 
     void init_parent(void){
+
+        int size_total = size_block_ * number_block_side_;
+        progressbar *progress = progressbar_new("Init parent", size_total);
 #pragma omp parallel for
-        for(int x=0;x<size_block_*number_block_side_;++x){
-            for(int y=0;y<size_block_*number_block_side_;++y){
-                for(int z=0;z<size_block_*number_block_side_;++z){
+        for(int x=0;x<size_total;++x){
+            for(int y=0;y<size_total;++y){
+                for(int z=0;z<size_total;++z){
                     block_coordinate coor(this->size_block_, this->number_block_side_);
                     coor.convert_from(x, y, z);
                     this->mmap_parents_[coor.index_block][coor.index_remain] = coor.index_whole;
                 }
             }
+#pragma omp critical
+            progressbar_inc(progress);
         }
+
+        progressbar_finish(progress);
         return;
     }
 

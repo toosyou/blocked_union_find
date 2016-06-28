@@ -115,6 +115,8 @@ void multi_block::union_all6(int threshold){
     //init
     this->init_parent();
 
+    progressbar *progress = progressbar_new("union all6", total_size);
+
     for(int x=0;x<total_size;++x){
         for(int y=0;y<total_size;++y){
             for(int z=0;z<total_size;++z){
@@ -151,7 +153,11 @@ void multi_block::union_all6(int threshold){
                 
             }
         }
+        progressbar_inc(progress);
     }
+    progressbar_finish(progress);
+
+    progress = progressbar_new("find all again", total_size);
 
     //find all again
     for(int x=0;x<total_size;++x){
@@ -161,7 +167,9 @@ void multi_block::union_all6(int threshold){
                     this->find_parent_( x, y, z );
             }
         }
+        progressbar_inc(progress);
     }
+    progressbar_finish(progress);
     
     return ;
 }
