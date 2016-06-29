@@ -1,113 +1,5 @@
 #include "block.h"
 
-void block::read_raw(const char* address_raw, int size,
-        int byte_voxel,  int threshold){
-    
-    //init value_
-    this->threshold_ = threshold;
-    this->value_.clear();
-    this->value_.resize(size);
-    for(int i=0;i<size;++i){
-        this->value_[i].resize(size);
-        for(int j=0;j<size;++j){
-            this->value_[i][j].resize(size, 0);
-        }
-    }
-
-    //read from raw data
-    //mmap raw data first
-    int fd_raw = open(address_raw, O_RDONLY);
-    struct stat stat_raw;
-    fstat(fd_raw, &stat_raw);
-    char *mmap_raw = (char*)mmap(NULL, stat_raw.st_size, PROT_READ, MAP_SHARED, fd_raw, 0);
-   
-    //read from mmap
-#pragma omp parallel for
-    for(int i=0;i<size;++i){//z
-        for(int j=0;j<size;++j){//y
-            for(int k=0;k<size;++k){//x
-                int offset = (i*size*size + j*size + k)*byte_voxel;
-                int raw_value = 0;
-                if(byte_voxel == 2){
-                    raw_value = *((unsigned int16_t*)(mmap_raw+offset));
-                }
-                this->value_[i][j][k] = raw_value >= threshold ? 1 : 0;
-            }
-        }
-    }
-
-    //close all
-    munmap(mmap_raw, stat_raw.st_size);
-    close(fd_raw);
-    return;
-}
-
-void block::union_all6(){
-
-    int size_value = this->value_.size();
-
-    this->init_parent_();
-
-    for(int i=0;i<size_value;++i){
-        for(int j=0;j<size_value;++j){
-            for(int k=0;k<size_value;++k){
-
-                //there's no union with 0
-                if(this->value_[i][j][k] == 0)
-                    continue;
-
-                unsigned index_now = i*size_value*size_value +
-                                        j*size_value + k;
-                
-                //surrounding 6 voxels
-                for(int ii=-1;ii<=1;++ii){
-                    for(int jj=-1;jj<=1;++jj){
-                        for(int kk=-1;kk<=1;++kk){
-                            if( abs(ii)+abs(jj)+abs(kk) != 1 )
-                                continue;
-                            int new_z = i+ii;
-                            int new_y = j+jj;
-                            int new_x = k+kk;
-
-                            //check bound
-                            if( new_z < 0 || new_z >= size_value ||
-                                    new_y < 0 || new_y >= size_value || 
-                                    new_x < 0 || new_x >= size_value)
-                                continue;
-                            
-                            int index_target = new_z*size_value*size_value +
-                                            new_y*size_value + new_x;
-                            
-                            if( this->value_[new_z][new_y][new_x] == 1 ){
-                                //union
-                                this->union_parent_(index_now, index_target);
-                            }
-
-                        }
-                    }
-                }//surrounding 6 voxels
-            }
-        }
-    }
-
-    //find all again
-    for(unsigned int i=0;i<this->parent_.size();++i){
-        this->find_parent_(i);
-    }
-
-    return ;
-}
-
-void block::output_parent(const char* address_parent){
-    
-    FILE *file_parent = fopen(address_parent, "wb");
-
-    fwrite( (char*)(&this->parent_[0]), 4, this->parent_.size(), file_parent );
-
-    fclose(file_parent);
-    return;
-}
-
 long long int index_parent(int size_block, int number_block_side, int index_block, int index_remain){
 
     long long int number_block_side2 = number_block_side * number_block_side;
@@ -187,13 +79,36 @@ void multi_block::union_all6(int threshold){
 
     //find all again
     for(int index_block=0; index_block < total_number_block; ++index_block){
-        for(int index_remain; index_remain < total_remain; ++index_remain){
+        for(int index_remain=0; index_remain < total_remain; ++index_remain){
             coor.convert_from(index_block, index_remain);
             int x = coor.x;
             int y = coor.y;
             int z = coor.z;
             if(this->value(x, y, z) >= threshold)
                 this->find_parent_( x, y, z );
+        }
+        progressbar_inc(progress);
+    }
+    progressbar_finish(progress);
+
+    //reindexing to .set
+    progress = progressbar_new("reindexing", total_number_block);
+    map<long long int, unsigned int> new_index;
+    unsigned int index_sofar = 1;
+    new_index[0ll] = 0;
+
+    for(int index_block=0; index_block < total_number_block; ++index_block){
+        for(int index_remain=0; index_remain < total_remain; ++index_remain){
+            long long int old_index = this->mmap_parents_[index_block][index_remain];
+            map<long long int, unsigned int>::iterator it = new_index.find(old_index);
+
+            if( it != new_index.end() ){//find
+                this->mmap_sets_[index_block][index_remain] = it->second;
+            }else{//didnt find it
+                new_index[old_index] = index_sofar;
+                this->mmap_sets_[index_block][index_remain] = index_sofar;
+                index_sofar++;
+            }
         }
         progressbar_inc(progress);
     }

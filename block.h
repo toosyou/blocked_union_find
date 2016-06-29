@@ -12,70 +12,9 @@
 #include <math.h>
 #include "progressbar.h"
 #include "statusbar.h"
+#include <map>
 
 using namespace std;
-
-class block{
-    vector< vector< vector<int> > > value_;
-    vector< unsigned int >parent_;
-    int threshold_;
-    
-    void init_parent_(){
-        int parent_size = this->value_.size()*this->value_.size()*this->value_.size();
-        this->parent_.clear();
-        this->parent_.resize(parent_size);
-#pragma omp parallel for
-        for(int i=0;i<parent_size;++i){
-            this->parent_[i] = (unsigned int)i;
-        }
-        return ;
-    }
-
-    unsigned int find_parent_(unsigned int index){
-        vector<int> index_for_update;
-
-        while( parent_[index] != index){
-            index_for_update.push_back(index);
-            index = parent_[index];
-        }
-        for(unsigned int i=0;i<index_for_update.size();++i){
-            parent_[ index_for_update[i] ] = index;
-        }
-
-        return index;
-    }
-
-    bool union_parent_(unsigned int index_a, unsigned int index_b){
-        
-        int root_a = find_parent_(index_a);
-        int root_b = find_parent_(index_b);
-        if(root_a == root_b){
-            return false;
-        }
-
-        parent_[root_a] = root_b;
-        return true;
-    }
-
-public:
-    
-    block(){
-        this->value_.clear();
-        this->threshold_ = -1;
-    }
-
-    block(const char *address_raw, int size,
-            int byte_voxel, int threshold = 17000){
-        this->read_raw( address_raw, size, byte_voxel, threshold );
-    }
-
-    void read_raw(const char *address_raw, int size,
-            int byte_voxel,  int threshold = 17000);
-
-    void union_all6();
-
-    void output_parent(const char* address_parent);
-};
 
 struct block_coordinate{
     int size_block;
@@ -222,10 +161,12 @@ class multi_block{
     vector<uint16_t*> mmap_blocks_;
     vector<struct stat> stat_blocks_;
     block_vector<long long int*> mmap_parents_;
+    vector<unsigned int*> mmap_sets_;
 
     int size_block_;
     int number_block_side_;
     unsigned int size_parent_;
+    int size_set_;
 
     string directory_blocks_;
     string directory_parent_;
@@ -269,15 +210,25 @@ public:
     }
 
     multi_block(const char* directory_blocks, int number_raw,
-            int size, const char* directory_parent){
+            int size, const char* directory_parent, const char* directory_set){
+
+        //init values
         this->directory_blocks_ = string(directory_blocks);
         this->directory_parent_ = string(directory_parent);
+
         this->mmap_blocks_.resize(number_raw, NULL);
         this->stat_blocks_.resize(number_raw);
         this->mmap_parents_.resize(number_raw, NULL);
+        this->mmap_sets_.resize(number_raw, NULL);
+
         this->size_block_ = size;
         this->number_block_side_ = (int)(pow(number_raw, 1.0/3.0) + 0.5);
 
+        //create directory
+        mkdir(directory_parent, 0755);
+        mkdir(directory_set, 0755);
+
+        //remember the original working directory
         char original_directory[200] = {0};
         getcwd(original_directory, 200);
         chdir(directory_blocks);
@@ -307,11 +258,12 @@ public:
         //mapping parent files
 #pragma omp parallel for
         for(int i=0;i<number_raw;++i){
-            //cerr << "mapping " << i << "th .prt" <<endl;
+
             char address_parent[200] = {0};
             int fd_parent = -1;
             
             sprintf(address_parent, "%d.prt", i);
+
             //create the parent file with the currect file size
             fd_parent = open(address_parent, O_RDWR | O_CREAT, 0644);
             this->size_parent_ = sizeof(long long int) * size_block_ * size_block_ * size_block_ ;
@@ -331,12 +283,41 @@ public:
         }
         
         chdir(original_directory);
+        chdir(directory_set);
+
+#pragma omp parallel for
+        for(int i=0;i<number_raw;++i)
+        {
+            char address_set[200] = {0};
+            int fd_set = -1;
+            
+            sprintf(address_set, "%d.set", i);
+
+            //create the parent file with the currect file size
+            fd_set = open(address_set, O_RDWR | O_CREAT, 0644);
+            this->size_set_ = sizeof(unsigned int) * size_block_ * size_block_ * size_block_ ;
+            lseek(fd_set, this->size_set_+1, SEEK_SET);
+            write(fd_set, "", 1);
+            lseek(fd_set, 0, SEEK_SET);
+            
+            //mapping
+            this->mmap_sets_[i] = (unsigned int*)mmap(NULL, this->size_set_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_set, 0);
+            if(this->mmap_sets_[i] == MAP_FAILED){
+                cerr << i << "th SET MMAP ERROR!" <<endl;
+                close(fd_set);
+                exit(-1);
+            }
+            close(fd_set);
+        }
+
+        chdir(original_directory);
     }
 
     ~multi_block(){
         for(unsigned int i=0;i<this->mmap_blocks_.size();++i){
             munmap(this->mmap_blocks_[i], this->stat_blocks_[i].st_size);
             munmap(this->mmap_parents_[i], this->size_parent_);
+            munmap(this->mmap_sets_[i], this->size_set_);
         }
     }
 
