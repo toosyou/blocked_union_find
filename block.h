@@ -147,6 +147,28 @@ struct block_coordinate{
         return;
     }
 
+    void convert_from(const int input_index_block,const int input_index_reamin){
+        this->index_block = input_index_block;
+        this->index_remain = input_index_reamin;
+
+        int number_block_side2 = this->number_block_side * this->number_block_side;
+        int size_block2 = this->size_block * this->size_block;
+        
+        int index_block_z = index_block / number_block_side2;
+        int index_block_y = ( index_block % number_block_side2 ) / number_block_side;
+        int index_block_x = index_block % number_block_side;
+        
+        int remained_z = index_remain / size_block2;
+        int remained_y = (index_remain % size_block2) / size_block;
+        int remained_x = index_remain % size_block;
+
+        this->x = index_block_x * size_block + remained_x;
+        this->y = index_block_y * size_block + remained_y;
+        this->z = index_block_z * size_block + remained_z;
+
+        this->index_whole = (long long int)z * new_size_block * new_size_block + (long long int)y * new_size_block + (long long int)x;
+
+    }
 
     bool operator==(block_coordinate &b){
         if( this->size_block == b.size_block &

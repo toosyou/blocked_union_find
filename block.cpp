@@ -131,61 +131,69 @@ long long int index_parent(int size_block, int number_block_side, int index_bloc
 
 void multi_block::union_all6(int threshold){
     
-    int total_size = this->size_block_ * this->number_block_side_;
+    const int total_number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
+    const int total_remain = this->size_block_*this->size_block_*this->size_block_;
+    const int total_size = this->size_block_ * this->number_block_side_;
+    block_coordinate coor(this->size_block_, this->number_block_side_);
+
     //init
     this->init_parent();
 
-    progressbar *progress = progressbar_new("union all6", total_size);
+    progressbar *progress = progressbar_new("union all6", total_number_block);
 
-    for(int z=0;z<total_size;++z){
-        for(int y=0;y<total_size;++y){
-            for(int x=0;x<total_size;++x){
-                
-                //it's below threshold wont be connected
-                if(this->value(x, y, z) < threshold){
-                    this->write_parent(x, y, z, 0ll);
-                    continue;
-                }
-
-                //surrounding 6 points
-                for(int dx=-1;dx<=1;++dx){
-                    for(int dy=-1;dy<=1;++dy){
-                        for(int dz=-1;dz<=1;++dz){
-
-                            //only check surrounding 6 points
-                            if( abs(dx) + abs(dy) + abs(dz) != 1 )
-                                continue;
-                            //check boundary
-                            if( x+dx < 0 || x+dx >= total_size ||
-                                    y+dy < 0 || y+dy >= total_size ||
-                                    z+dz < 0 || z+dz >= total_size)
-                                continue;
-
-                            //threshold check
-                            if( this->value(x+dx, y+dy, z+dz) < threshold )
-                                continue;
-                            
-                            this->union_parent_(x, y, z, x+dx, y+dy, z+dz);
-
-                        }
-                    }
-                }//surrounding 6 points
-                
+    for(int index_block=0;index_block<total_number_block;++index_block){
+        for(int index_remain=0;index_remain<total_remain;++index_remain){
+            coor.convert_from(index_block, index_remain);
+            int x = coor.x;
+            int y = coor.y;
+            int z = coor.z;
+ 
+            //it's below threshold wont be connected
+            if(this->value(x, y, z) < threshold){
+                this->write_parent(x, y, z, 0ll);
+                continue;
             }
+
+            //surrounding 6 points
+            for(int dx=-1;dx<=1;++dx){
+                for(int dy=-1;dy<=1;++dy){
+                    for(int dz=-1;dz<=1;++dz){
+
+                        //only check surrounding 6 points
+                        if( abs(dx) + abs(dy) + abs(dz) != 1 )
+                            continue;
+                        //check boundary
+                        if( x+dx < 0 || x+dx >= total_size ||
+                                y+dy < 0 || y+dy >= total_size ||
+                                z+dz < 0 || z+dz >= total_size)
+                            continue;
+
+                        //threshold check
+                        if( this->value(x+dx, y+dy, z+dz) < threshold )
+                            continue;
+                        
+                        this->union_parent_(x, y, z, x+dx, y+dy, z+dz);
+
+                    }
+                }
+            }//surrounding 6 points
+                 
         }
         progressbar_inc(progress);
     }
     progressbar_finish(progress);
 
-    progress = progressbar_new("find all again", total_size);
+    progress = progressbar_new("find all again", total_number_block);
 
     //find all again
-    for(int x=0;x<total_size;++x){
-        for(int y=0;y<total_size;++y){
-            for(int z=0;z<total_size;++z){
-                if(this->value(x, y, z) >= threshold)
-                    this->find_parent_( x, y, z );
-            }
+    for(int index_block=0; index_block < total_number_block; ++index_block){
+        for(int index_remain; index_remain < total_remain; ++index_remain){
+            coor.convert_from(index_block, index_remain);
+            int x = coor.x;
+            int y = coor.y;
+            int z = coor.z;
+            if(this->value(x, y, z) >= threshold)
+                this->find_parent_( x, y, z );
         }
         progressbar_inc(progress);
     }
