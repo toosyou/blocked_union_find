@@ -128,19 +128,19 @@ long long int index_parent(int size_block, int number_block_side, int index_bloc
     return ((long long int)z)*number_block_side2*size_block2 + ((long long int)y)*number_block_side*size_block + (long long int)x;
 }
 
+
 void multi_block::union_all6(int threshold){
     
     int total_size = this->size_block_ * this->number_block_side_;
-
     //init
     this->init_parent();
 
     progressbar *progress = progressbar_new("union all6", total_size);
 
-    for(int x=0;x<total_size;++x){
+    for(int z=0;z<total_size;++z){
         for(int y=0;y<total_size;++y){
-            for(int z=0;z<total_size;++z){
-
+            for(int x=0;x<total_size;++x){
+                
                 //it's below threshold wont be connected
                 if(this->value(x, y, z) < threshold){
                     this->write_parent(x, y, z, 0ll);
@@ -164,7 +164,7 @@ void multi_block::union_all6(int threshold){
                             //threshold check
                             if( this->value(x+dx, y+dy, z+dz) < threshold )
                                 continue;
-
+                            
                             this->union_parent_(x, y, z, x+dx, y+dy, z+dz);
 
                         }

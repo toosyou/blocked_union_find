@@ -92,7 +92,7 @@ struct block_coordinate{
     block_coordinate(){
 
     }
-    
+
     block_coordinate(int sb, int nbs){
         this->size_block = sb;
         this->number_block_side = nbs;
@@ -124,7 +124,7 @@ struct block_coordinate{
     }
 
     void convert_from(long long int whole){
-        int new_size_block2 = new_size_block & new_size_block;
+        int new_size_block2 = new_size_block * new_size_block;
         this->index_whole = whole;
         this->z = index_whole / (new_size_block2);
         this->y = (index_whole % new_size_block2)/ new_size_block;
@@ -147,14 +147,59 @@ struct block_coordinate{
         return;
     }
 
+
+    bool operator==(block_coordinate &b){
+        if( this->size_block == b.size_block &
+                this->number_block_side == b.number_block_side &
+                this->index_whole == b.index_whole)
+            return true;
+        return false;
+    }
+
+    bool operator!=(block_coordinate &b){
+        return !this->operator==(b);
+    }
+
 };
 
 long long int index_parent(int size_block, int number_block_side, int index_block, int index_reamin);
 
+template <class T>
+class block_vector{
+
+    vector<T> value_;
+
+public:
+
+    block_vector(){
+        this->value_.clear();
+    }
+
+    void resize(int new_size, T init){
+        this->value_.resize(new_size, init);
+        return;
+    }
+    
+    void clear(){
+        this->value_.clear();
+    }
+
+    block_coordinate operator[](block_coordinate input_coor){
+        block_coordinate result_coor(input_coor.size_block, input_coor.number_block_side);
+        result_coor.convert_from( this->value_[input_coor.index_block][input_coor.index_remain] );
+        return result_coor;
+    }
+
+    T& operator[](int index){
+        return this->value_[index];
+    }
+
+};
+
 class multi_block{
-    vector<int16_t*> mmap_blocks_;
+    vector<uint16_t*> mmap_blocks_;
     vector<struct stat> stat_blocks_;
-    vector<long long int*> mmap_parents_;
+    block_vector<long long int*> mmap_parents_;
 
     int size_block_;
     int number_block_side_;
@@ -163,14 +208,14 @@ class multi_block{
     string directory_blocks_;
     string directory_parent_;
 
-    long long int find_parent_(int x, int y, int z){
+    block_coordinate find_parent_(int x, int y, int z){
         block_coordinate coor(this->size_block_, this->number_block_side_);
         coor.convert_from(x, y, z);
         vector<block_coordinate> optimising_list;
 
-        while( this->mmap_parents_[coor.index_block][coor.index_remain] != coor.index_whole ){
+        while( this->mmap_parents_[coor] != coor ){
             optimising_list.push_back(coor);
-            coor.convert_from( this->mmap_parents_[coor.index_block][coor.index_remain] );
+            coor = this->mmap_parents_[coor];
         }
 
         //optimise
@@ -179,20 +224,16 @@ class multi_block{
             this->mmap_parents_[this_coor.index_block][this_coor.index_remain] = coor.index_whole;
         }
 
-        return coor.index_whole;
+        return coor;
     }
 
     bool union_parent_(int xa, int ya, int za, int xb, int yb, int zb){
-        long long int root_a = this->find_parent_(xa, ya, za);
-        long long int root_b = this->find_parent_(xb, yb, zb);
+        block_coordinate root_a = this->find_parent_(xa, ya, za);
+        block_coordinate root_b = this->find_parent_(xb, yb, zb);
         if( root_a == root_b )//no need to union
             return false;
 
-        block_coordinate coor_a(this->size_block_, this->number_block_side_);
-        block_coordinate coor_b(this->size_block_, this->number_block_side_);
-        coor_a.convert_from(xa, ya, za);
-        coor_b.convert_from(xb, yb, zb);
-        this->mmap_parents_[coor_b.index_block][coor_b.index_remain] = coor_a.index_whole;
+        this->mmap_parents_[root_b.index_block][root_b.index_remain] = root_a.index_whole;
         
         return true;
     }
@@ -229,7 +270,7 @@ public:
             fd_raw = open(address_raw, O_RDONLY);
             fstat(fd_raw, &stat_blocks_[i]);
             
-            this->mmap_blocks_[i] = (int16_t*)mmap(NULL, stat_blocks_[i].st_size, PROT_READ, MAP_SHARED, fd_raw, 0);
+            this->mmap_blocks_[i] = (uint16_t*)mmap(NULL, stat_blocks_[i].st_size, PROT_READ, MAP_SHARED, fd_raw, 0);
             if(this->mmap_blocks_[i] == MAP_FAILED){
                 cerr << i <<  " MMAP ERROR!" <<endl;
                 close(fd_raw);
@@ -293,7 +334,6 @@ public:
 
     void init_parent(void){
 
-        int size_total = size_block_ * number_block_side_;
         int size_parent_block = this->size_block_ * this->size_block_ * this->size_block_;
         int number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
         progressbar *progress = progressbar_new("Init parent", number_block);
