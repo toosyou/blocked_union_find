@@ -161,7 +161,7 @@ class multi_block{
     vector<uint16_t*> mmap_blocks_;
     vector<struct stat> stat_blocks_;
     block_vector<long long int*> mmap_parents_;
-    vector<unsigned int*> mmap_sets_;
+    vector<uint16_t*> mmap_sets_;
 
     int size_block_;
     int number_block_side_;
@@ -256,6 +256,7 @@ public:
         chdir(directory_parent);
 
         //mapping parent files
+        this->size_parent_ = sizeof(long long int) * size_block_ * size_block_ * size_block_ ;
 #pragma omp parallel for
         for(int i=0;i<number_raw;++i){
 
@@ -266,7 +267,6 @@ public:
 
             //create the parent file with the currect file size
             fd_parent = open(address_parent, O_RDWR | O_CREAT, 0644);
-            this->size_parent_ = sizeof(long long int) * size_block_ * size_block_ * size_block_ ;
             lseek(fd_parent, this->size_parent_+1, SEEK_SET);
             write(fd_parent, "", 1);
             lseek(fd_parent, 0, SEEK_SET);
@@ -285,6 +285,7 @@ public:
         chdir(original_directory);
         chdir(directory_set);
 
+        this->size_set_ = sizeof(uint16_t) * size_block_ * size_block_ * size_block_ ;
 #pragma omp parallel for
         for(int i=0;i<number_raw;++i)
         {
@@ -295,13 +296,12 @@ public:
 
             //create the parent file with the currect file size
             fd_set = open(address_set, O_RDWR | O_CREAT, 0644);
-            this->size_set_ = sizeof(unsigned int) * size_block_ * size_block_ * size_block_ ;
             lseek(fd_set, this->size_set_+1, SEEK_SET);
             write(fd_set, "", 1);
             lseek(fd_set, 0, SEEK_SET);
             
             //mapping
-            this->mmap_sets_[i] = (unsigned int*)mmap(NULL, this->size_set_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_set, 0);
+            this->mmap_sets_[i] = (uint16_t*)mmap(NULL, this->size_set_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_set, 0);
             if(this->mmap_sets_[i] == MAP_FAILED){
                 cerr << i << "th SET MMAP ERROR!" <<endl;
                 close(fd_set);

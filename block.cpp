@@ -45,6 +45,8 @@ void multi_block::union_all6(int threshold){
                 this->write_parent(x, y, z, 0ll);
                 continue;
             }
+            //this->write_parent(x, y, z, (long long int)(x+y+z) );
+            //continue;
 
             //surrounding 6 points
             for(int dx=-1;dx<=1;++dx){
@@ -93,14 +95,18 @@ void multi_block::union_all6(int threshold){
 
     //reindexing to .set
     progress = progressbar_new("reindexing", total_number_block);
-    map<long long int, unsigned int> new_index;
-    unsigned int index_sofar = 1;
+    map<long long int, uint16_t> new_index;
+    uint16_t index_sofar = (uint16_t)1;
     new_index[0ll] = 0;
 
     for(int index_block=0; index_block < total_number_block; ++index_block){
         for(int index_remain=0; index_remain < total_remain; ++index_remain){
+
+            //this->mmap_sets_[index_block][index_remain] = (uint16_t)this->mmap_parents_[index_block][index_remain];
+            //continue;
+
             long long int old_index = this->mmap_parents_[index_block][index_remain];
-            map<long long int, unsigned int>::iterator it = new_index.find(old_index);
+            map<long long int, uint16_t>::iterator it = new_index.find(old_index);
 
             if( it != new_index.end() ){//find
                 this->mmap_sets_[index_block][index_remain] = it->second;
