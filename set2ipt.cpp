@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include "progressbar.h"
 #include "statusbar.h"
+#include <map>
 
 //#define PREFIX_SETS "/Users/toosyou/ext/Research/neuron_data/raw_noth/"
 #define PREFIX_SETS "sets/"
@@ -21,11 +22,15 @@ int main(void){
 	const short BPP=2, PT=0;
 	const int gray=65535;
 	
+    map<uint16_t, uint16_t> new_index;
+    new_index[0] = (uint16_t)0;
+    uint16_t index_sofar = 1;
+    int total_index = 0;
+
     mkdir(PREFIX_SETIPTS, 0755);
 
     progressbar *progress = progressbar_new("converting", n);
 
-#pragma omp parallel for
 	for(int c=0;c<n;c++){
 
         fstream outFile;
@@ -67,18 +72,35 @@ int main(void){
             continue;
         }
 
+        int number_new_index = 0;
         char buffer[64];
         while(  inFile.read(buffer, BPP) ){
-            outFile.write(buffer, BPP);
+            uint16_t index_old = *(uint16_t*)buffer;
+            uint16_t index_new = 0;
+            map<uint16_t, uint16_t>::iterator it = new_index.find( index_old );
+            if( it != new_index.end()){//find
+                index_new = it->second ;
+            }else{
+                new_index[index_old] = index_sofar;
+                index_new = index_sofar;
+                index_sofar += 1001;
+                number_new_index++;
+                total_index++;
+            }
+            
+            outFile.write( (const char*)&index_new, BPP);
         }
 	
 	    outFile.close();
         inFile.close();
 
-#pragma omp critical
+        cout << c << " number_new_index_in_block= " << number_new_index <<endl;
+
         progressbar_inc(progress);
 	}
     progressbar_finish(progress);
+    
+    cout << "total_number_index= " << total_index ;
 
     return 0;
 }
