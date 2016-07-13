@@ -35,13 +35,13 @@ public:
         this->value_.resize(new_size, init);
         return;
     }
-    
+
     void clear(){
         this->value_.clear();
     }
 
     block_coordinate operator[](block_coordinate input_coor){
-        block_coordinate result_coor(input_coor.size_block, input_coor.number_block_side);
+        block_coordinate result_coor(input_coor.size_block_x, input_coor.size_block_y, input_coor.size_block_z, input_coor.number_block_side);
         result_coor.convert_from( this->value_[input_coor.index_block][input_coor.index_remain] );
         return result_coor;
     }
@@ -56,18 +56,19 @@ class multi_block{
     vector<uint16_t*> mmap_blocks_;
     vector<struct stat> stat_blocks_;
     block_vector<long long int*> mmap_parents_;
-    vector<uint16_t*> mmap_sets_;
 
-    int size_block_;
+    int size_block_x_;
+    int size_block_y_;
+    int size_block_z_;
     int number_block_side_;
     unsigned int size_parent_;
-    int size_set_;
 
     string directory_blocks_;
     string directory_parent_;
+    string directory_set_;
 
     block_coordinate find_parent_(int x, int y, int z){
-        block_coordinate coor(this->size_block_, this->number_block_side_);
+        block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
         coor.convert_from(x, y, z);
         vector<block_coordinate> optimising_list;
 
@@ -92,31 +93,36 @@ class multi_block{
             return false;
 
         this->mmap_parents_[root_b.index_block][root_b.index_remain] = root_a.index_whole;
-        
+
         return true;
     }
 
+    void append_xyz_(int index_block, int index_remain, FILE *file);
 public:
 
     multi_block(){
         this->mmap_blocks_.clear();
+        this->stat_blocks_.clear();
         this->mmap_parents_.clear();
         this->directory_blocks_.clear();
+        this->directory_parent_.clear();
     }
 
     multi_block(const char* directory_blocks, int number_raw,
-            int size, const char* directory_parent, const char* directory_set){
+            int size_x, int size_y, int size_z, const char* directory_parent, const char* directory_set){
 
         //init values
         this->directory_blocks_ = string(directory_blocks);
         this->directory_parent_ = string(directory_parent);
+        this->directory_set_ = string(directory_set);
 
         this->mmap_blocks_.resize(number_raw, NULL);
         this->stat_blocks_.resize(number_raw);
         this->mmap_parents_.resize(number_raw, NULL);
-        this->mmap_sets_.resize(number_raw, NULL);
 
-        this->size_block_ = size;
+        this->size_block_x_ = size_x;
+        this->size_block_y_ = size_y;
+        this->size_block_z_ = size_z;
         this->number_block_side_ = (int)(pow(number_raw, 1.0/3.0) + 0.5);
 
         //create directory
@@ -129,7 +135,7 @@ public:
         chdir(directory_blocks);
 
         //mapping raw blocks
-#pragma omp parallel for
+        #pragma omp parallel for
         for(int i=0;i<number_raw;++i){
             char address_raw[200] = {0};
             int fd_raw = -1;
@@ -137,7 +143,7 @@ public:
             sprintf(address_raw, "%d.raw", i);
             fd_raw = open(address_raw, O_RDONLY);
             fstat(fd_raw, &stat_blocks_[i]);
-            
+
             this->mmap_blocks_[i] = (uint16_t*)mmap(NULL, stat_blocks_[i].st_size, PROT_READ, MAP_SHARED, fd_raw, 0);
             if(this->mmap_blocks_[i] == MAP_FAILED){
                 cerr << i <<  " MMAP ERROR!" <<endl;
@@ -151,13 +157,13 @@ public:
         chdir(directory_parent);
 
         //mapping parent files
-        this->size_parent_ = sizeof(long long int) * size_block_ * size_block_ * size_block_ ;
-#pragma omp parallel for
+        this->size_parent_ = sizeof(long long int) * size_block_x_ * size_block_y_ * size_block_z_ ;
+        #pragma omp parallel for
         for(int i=0;i<number_raw;++i){
 
             char address_parent[200] = {0};
             int fd_parent = -1;
-            
+
             sprintf(address_parent, "%d.prt", i);
 
             //create the parent file with the currect file size
@@ -165,7 +171,7 @@ public:
             lseek(fd_parent, this->size_parent_+1, SEEK_SET);
             write(fd_parent, "", 1);
             lseek(fd_parent, 0, SEEK_SET);
-            
+
             //mapping
             this->mmap_parents_[i] = (long long int*)mmap(NULL, this->size_parent_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_parent, 0);
             if(this->mmap_parents_[i] == MAP_FAILED){
@@ -176,55 +182,27 @@ public:
 
             close(fd_parent);
         }
-        
-        chdir(original_directory);
-        chdir(directory_set);
-
-        this->size_set_ = sizeof(uint16_t) * size_block_ * size_block_ * size_block_ ;
-#pragma omp parallel for
-        for(int i=0;i<number_raw;++i)
-        {
-            char address_set[200] = {0};
-            int fd_set = -1;
-            
-            sprintf(address_set, "%d.set", i);
-
-            //create the parent file with the currect file size
-            fd_set = open(address_set, O_RDWR | O_CREAT, 0644);
-            lseek(fd_set, this->size_set_+1, SEEK_SET);
-            write(fd_set, "", 1);
-            lseek(fd_set, 0, SEEK_SET);
-            
-            //mapping
-            this->mmap_sets_[i] = (uint16_t*)mmap(NULL, this->size_set_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_set, 0);
-            if(this->mmap_sets_[i] == MAP_FAILED){
-                cerr << i << "th SET MMAP ERROR!" <<endl;
-                close(fd_set);
-                exit(-1);
-            }
-            close(fd_set);
-        }
 
         chdir(original_directory);
     }
 
     ~multi_block(){
+        #pragma omp parallel for
         for(unsigned int i=0;i<this->mmap_blocks_.size();++i){
             munmap(this->mmap_blocks_[i], this->stat_blocks_[i].st_size);
             munmap(this->mmap_parents_[i], this->size_parent_);
-            munmap(this->mmap_sets_[i], this->size_set_);
         }
     }
 
     int value(int x, int y, int z){
-        block_coordinate coor(this->size_block_, this->number_block_side_);
+        block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
         coor.convert_from(x, y, z);
 
         return (int)this->mmap_blocks_[coor.index_block][coor.index_remain];
     }
 
     void write_parent(int x, int y, int z, long long int parent){
-        block_coordinate coor(this->size_block_, this->number_block_side_);
+        block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
         coor.convert_from(x, y, z);
         this->mmap_parents_[coor.index_block][coor.index_remain] = parent;
         return ;
@@ -232,14 +210,16 @@ public:
 
     void init_parent(void){
 
-        int size_parent_block = this->size_block_ * this->size_block_ * this->size_block_;
+        int size_parent_block = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
         int number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
         progressbar *progress = progressbar_new("Init parent", number_block);
 
         for(int index_block = 0;index_block < number_block; ++index_block){
-#pragma omp parallel for
+            #pragma omp parallel for
             for(int index_remain = 0;index_remain < size_parent_block;++index_remain){
-                this->mmap_parents_[index_block][index_remain] = index_parent(this->size_block_, this->number_block_side_, index_block, index_remain); 
+                block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
+                coor.convert_from(index_block, index_remain);
+                this->mmap_parents_[index_block][index_remain] = coor.index_whole;
             }
             progressbar_inc(progress);
         }
@@ -247,6 +227,8 @@ public:
         progressbar_finish(progress);
         return;
     }
+
+    void reindex();
 
     void union_all6(int threshold=17000);
 };

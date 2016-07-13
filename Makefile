@@ -9,5 +9,3 @@ blocked_union: main.cpp block.h block.cpp block_coordinate.h
 set2ipt: set2ipt.cpp
 	g++-5 $(CXXFLAGS) set2ipt.cpp -o $@
 
-reindex: reindex.cpp
-	g++-5 $(CXXFLAGS) reindex.cpp -o $@

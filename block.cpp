@@ -1,32 +1,105 @@
 #include "block.h"
 
-long long int index_parent(int size_block, int number_block_side, int index_block, int index_remain){
+void multi_block::append_xyz_(int index_block, int index_remain, FILE *file){
+    //data to append
+    block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
+    coor.convert_from(index_block, index_remain);
+    uint16_t x = coor.x;
+    uint16_t y = coor.y;
+    uint16_t z = coor.z;
 
-    long long int number_block_side2 = number_block_side * number_block_side;
-    long long int size_block2 = size_block * size_block;
+    //get number of points
+    int number_points = 0;
 
-    int index_block_z = index_block / number_block_side2;
-    int index_block_y = (index_block % number_block_side2) / number_block_side;
-    int index_block_x = index_block % number_block_side;
-    
-    int z_block = index_remain / size_block2;
-    int y_block = (index_remain % size_block2) / size_block ;
-    int x_block = index_remain % size_block;
+    fseek(file, 0, SEEK_SET);
+    fread(&number_points, sizeof(int), 1, file);
 
-    int x = index_block_x * size_block + x_block;
-    int y = index_block_y * size_block + y_block;
-    int z = index_block_z * size_block + z_block;
+    //to the append position
+    fseek(file, sizeof(int) + number_points*sizeof(uint16_t)*3, SEEK_SET);
+    fwrite(&x, sizeof(uint16_t), 1, file);
+    fwrite(&y, sizeof(uint16_t), 1, file);
+    fwrite(&z, sizeof(uint16_t), 1, file);
 
-    return ((long long int)z)*number_block_side2*size_block2 + ((long long int)y)*number_block_side*size_block + (long long int)x;
+    //currect the new size
+    number_points++;
+    fseek(file, 0, SEEK_SET);
+    fwrite(&number_points, sizeof(int), 1, file);
+
+    return;
+}
+
+void multi_block::reindex(){
+    const int total_remain = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
+    const int total_blocks = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
+    long long int index_sofar = 1;
+    map<long long int, long long int> index_map;
+    map<long long int, string> index_file; //new index to file
+    map<long long int, long long int>::iterator it_index_map;
+    index_map[0ll] = 0;
+
+    progressbar *progress = progressbar_new("reindexing", total_blocks);
+
+    //change to the directory of sets
+    char original_directory[100] = {0};
+    getcwd(original_directory, 100);
+    chdir(this->directory_set_.c_str());
+
+    for(int index_block=0;index_block<total_blocks;++index_block){
+        for(int index_remain=0;index_remain<total_remain;++index_remain){
+
+            long long int value = this->mmap_parents_[index_block][index_remain];
+            it_index_map = index_map.find(value);
+
+            if(it_index_map != index_map.end()){//find
+                if( it_index_map->second == 0 )
+                    continue;
+
+                string address_file = index_file[ it_index_map->second ];
+                FILE *file = fopen(address_file.c_str(), "r+b");
+
+                this->append_xyz_(index_block, index_remain, file);
+
+                fclose(file);
+
+            }else{// not find
+                index_map[value] = index_sofar++;
+
+                //data to output
+                int new_size = 0;
+
+                //create new file
+                char address_new[100] = {0};
+                sprintf(address_new, "%lld.set", index_map[value]);
+
+                FILE* file_new = fopen(address_new, "w+b");
+                fwrite( &new_size, sizeof(int), 1, file_new );
+
+                //write xyz
+                this->append_xyz_(index_block, index_remain, file_new);
+
+                fclose(file_new);
+
+                //update the file name
+                index_file[ index_map[value] ] = string(address_new);
+            }
+        }
+
+        progressbar_inc(progress);
+    }
+    progressbar_finish(progress);
+    chdir(original_directory);
+    return;
 }
 
 
 void multi_block::union_all6(int threshold){
-    
+
     const int total_number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
-    const int total_remain = this->size_block_*this->size_block_*this->size_block_;
-    const int total_size = this->size_block_ * this->number_block_side_;
-    block_coordinate coor(this->size_block_, this->number_block_side_);
+    const int total_remain = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
+    const int total_size_x = this->size_block_x_ * this->number_block_side_;
+    const int total_size_y = this->size_block_y_ * this->number_block_side_;
+    const int total_size_z = this->size_block_z_ * this->number_block_side_;
+    block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
 
     //init
     this->init_parent();
@@ -39,14 +112,12 @@ void multi_block::union_all6(int threshold){
             int x = coor.x;
             int y = coor.y;
             int z = coor.z;
- 
+
             //it's below threshold wont be connected
             if(this->value(x, y, z) < threshold){
                 this->write_parent(x, y, z, 0ll);
                 continue;
             }
-            //this->write_parent(x, y, z, (long long int)(x+y+z) );
-            //continue;
 
             //surrounding 6 points
             for(int dx=-1;dx<=1;++dx){
@@ -57,21 +128,21 @@ void multi_block::union_all6(int threshold){
                         if( abs(dx) + abs(dy) + abs(dz) != 1 )
                             continue;
                         //check boundary
-                        if( x+dx < 0 || x+dx >= total_size ||
-                                y+dy < 0 || y+dy >= total_size ||
-                                z+dz < 0 || z+dz >= total_size)
+                        if( x+dx < 0 || x+dx >= total_size_x ||
+                                y+dy < 0 || y+dy >= total_size_y ||
+                                z+dz < 0 || z+dz >= total_size_z)
                             continue;
 
                         //threshold check
                         if( this->value(x+dx, y+dy, z+dz) < threshold )
                             continue;
-                        
+
                         this->union_parent_(x, y, z, x+dx, y+dy, z+dz);
 
                     }
                 }
             }//surrounding 6 points
-                 
+
         }
         progressbar_inc(progress);
     }
@@ -94,31 +165,7 @@ void multi_block::union_all6(int threshold){
     progressbar_finish(progress);
 
     //reindexing to .set
-    progress = progressbar_new("reindexing", total_number_block);
-    map<long long int, uint16_t> new_index;
-    uint16_t index_sofar = (uint16_t)1;
-    new_index[0ll] = 0;
+    this->reindex();
 
-    for(int index_block=0; index_block < total_number_block; ++index_block){
-        for(int index_remain=0; index_remain < total_remain; ++index_remain){
-
-            //this->mmap_sets_[index_block][index_remain] = (uint16_t)this->mmap_parents_[index_block][index_remain];
-            //continue;
-
-            long long int old_index = this->mmap_parents_[index_block][index_remain];
-            map<long long int, uint16_t>::iterator it = new_index.find(old_index);
-
-            if( it != new_index.end() ){//find
-                this->mmap_sets_[index_block][index_remain] = it->second;
-            }else{//didnt find it
-                new_index[old_index] = index_sofar;
-                this->mmap_sets_[index_block][index_remain] = index_sofar;
-                index_sofar++;
-            }
-        }
-        progressbar_inc(progress);
-    }
-    progressbar_finish(progress);
-    
     return ;
 }
