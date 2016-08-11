@@ -91,7 +91,6 @@ void multi_block::reindex(){
     return;
 }
 
-
 void multi_block::union_all6(int threshold){
 
     const int total_number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
