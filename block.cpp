@@ -1,5 +1,111 @@
 #include "block.h"
 
+multi_block::multi_block(const char* directory_blocks, int number_raw,
+            int size_x, int size_y, int size_z, const char* directory_parent, const char* directory_set){
+
+    //init values
+    this->directory_blocks_ = string(directory_blocks);
+    this->directory_parent_ = string(directory_parent);
+    this->directory_set_ = string(directory_set);
+
+    this->mmap_blocks_.resize(number_raw, NULL);
+    this->stat_blocks_.resize(number_raw);
+    this->mmap_parents_.resize(number_raw, NULL);
+    this->mmap_size_.resize(number_raw, NULL);
+
+    this->size_block_x_ = size_x;
+    this->size_block_y_ = size_y;
+    this->size_block_z_ = size_z;
+    this->number_block_side_ = (int)(pow(number_raw, 1.0/3.0) + 0.5);
+
+    //create directory
+    mkdir(directory_parent, 0755);
+    mkdir(directory_set, 0755);
+
+    //recording the original working directory
+    char original_directory[200] = {0};
+    getcwd(original_directory, 200);
+    chdir(directory_blocks);
+
+    //mapping raw blocks
+    #pragma omp parallel for
+    for(int i=0;i<number_raw;++i){
+        char address_raw[200] = {0};
+        int fd_raw = -1;
+
+        sprintf(address_raw, "%d.raw", i);
+        fd_raw = open(address_raw, O_RDONLY);
+        fstat(fd_raw, &stat_blocks_[i]);
+
+        this->mmap_blocks_[i] = (uint16_t*)mmap(NULL, stat_blocks_[i].st_size, PROT_READ, MAP_SHARED, fd_raw, 0);
+        if(this->mmap_blocks_[i] == MAP_FAILED){
+            cerr << i <<  " MMAP ERROR!" <<endl;
+            close(fd_raw);
+            exit(-1);
+        }
+
+        close(fd_raw);
+    }
+    chdir(original_directory);
+    chdir(directory_parent);
+
+    //mapping parent files
+    this->size_parent_ = sizeof(long long int) * size_block_x_ * size_block_y_ * size_block_z_ ;
+    #pragma omp parallel for
+    for(int i=0;i<number_raw;++i){
+
+        char address_parent[200] = {0};
+        int fd_parent = -1;
+
+        sprintf(address_parent, "%d.prt", i);
+
+        //create the parent file with the currect file size
+        fd_parent = open(address_parent, O_RDWR | O_CREAT, 0644);
+        lseek(fd_parent, this->size_parent_+1, SEEK_SET);
+        write(fd_parent, "", 1);
+        lseek(fd_parent, 0, SEEK_SET);
+
+        //mapping
+        this->mmap_parents_[i] = (long long int*)mmap(NULL, this->size_parent_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_parent, 0);
+        if(this->mmap_parents_[i] == MAP_FAILED){
+            cerr << i << "th PARENT MMAP ERROR!" <<endl;
+            close(fd_parent);
+            exit(-1);
+        }
+
+        close(fd_parent);
+    }
+
+    //mapping size files
+    this->size_size_ = sizeof(unsigned int) * size_block_x_ * size_block_y_ * size_block_z_ ;
+    #pragma omp parallel for
+    for(int i=0;i<number_raw;++i){
+
+        char address_size[200] = {0};
+        int fd_size = -1;
+
+        sprintf(address_size, "%d.size", i);
+
+        //create the parent file with the currect file size
+        fd_size = open(address_size, O_RDWR | O_CREAT, 0644);
+        lseek(fd_size, this->size_size_+1, SEEK_SET);
+        write(fd_size, "", 1);
+        lseek(fd_size, 0, SEEK_SET);
+
+        //mapping
+        this->mmap_size_[i] = (unsigned int*)mmap(NULL, this->size_size_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_size, 0);
+        if(this->mmap_size_[i] == MAP_FAILED){
+            cerr << i << "th SIZE MMAP ERROR!" <<endl;
+            close(fd_size);
+            exit(-1);
+        }
+
+        close(fd_size);
+    }
+
+    chdir(original_directory);
+}
+
 void multi_block::append_xyz_(int index_block, int index_remain, FILE *file){
     //data to append
     block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
@@ -28,13 +134,14 @@ void multi_block::append_xyz_(int index_block, int index_remain, FILE *file){
     return;
 }
 
-void multi_block::reindex(){
+void multi_block::reindex(int threshold_size){
     const int total_remain = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
     const int total_blocks = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
     long long int index_sofar = 1;
     map<long long int, long long int> index_map;
     map<long long int, string> index_file; //new index to file
     map<long long int, long long int>::iterator it_index_map;
+    block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
     index_map[0ll] = 0;
 
     progressbar *progress = progressbar_new("reindexing", total_blocks);
@@ -48,11 +155,15 @@ void multi_block::reindex(){
         for(int index_remain=0;index_remain<total_remain;++index_remain){
 
             long long int value = this->mmap_parents_[index_block][index_remain];
+            coor.convert_from(value);
+
+            //it's not bigger enoough or it's background
+            if( this->mmap_size_[coor.index_block][coor.index_remain] < threshold_size || value == 0 )
+                continue;
+
             it_index_map = index_map.find(value);
 
             if(it_index_map != index_map.end()){//find
-                if( it_index_map->second == 0 )
-                    continue;
 
                 string address_file = index_file[ it_index_map->second ];
                 FILE *file = fopen(address_file.c_str(), "r+b");
@@ -101,7 +212,7 @@ void multi_block::union_all6(int threshold){
     block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
 
     //init
-    this->init_parent();
+    this->init_union_find();
 
     progressbar *progress = progressbar_new("union all6", total_number_block);
 
@@ -115,6 +226,7 @@ void multi_block::union_all6(int threshold){
             //it's below threshold wont be connected
             if(this->value(x, y, z) < threshold){
                 this->write_parent(x, y, z, 0ll);
+                this->write_size(x, y, z, (unsigned int)0);
                 continue;
             }
 

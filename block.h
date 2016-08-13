@@ -56,12 +56,14 @@ class multi_block{
     vector<uint16_t*> mmap_blocks_;
     vector<struct stat> stat_blocks_;
     block_vector<long long int*> mmap_parents_;
+    block_vector<unsigned int*> mmap_size_;
 
     int size_block_x_;
     int size_block_y_;
     int size_block_z_;
     int number_block_side_;
     unsigned int size_parent_;
+    unsigned int size_size_;
 
     string directory_blocks_;
     string directory_parent_;
@@ -92,123 +94,17 @@ class multi_block{
         if( root_a == root_b )//no need to union
             return false;
 
+        //union
         this->mmap_parents_[root_b.index_block][root_b.index_remain] = root_a.index_whole;
+        //update size
+        this->mmap_size_[root_a.index_block][root_a.index_remain] += this->mmap_size_[root_b.index_block][root_b.index_remain];
 
         return true;
     }
 
     void append_xyz_(int index_block, int index_remain, FILE *file);
-public:
 
-    multi_block(){
-        this->mmap_blocks_.clear();
-        this->stat_blocks_.clear();
-        this->mmap_parents_.clear();
-        this->directory_blocks_.clear();
-        this->directory_parent_.clear();
-    }
-
-    multi_block(const char* directory_blocks, int number_raw,
-            int size_x, int size_y, int size_z, const char* directory_parent, const char* directory_set){
-
-        //init values
-        this->directory_blocks_ = string(directory_blocks);
-        this->directory_parent_ = string(directory_parent);
-        this->directory_set_ = string(directory_set);
-
-        this->mmap_blocks_.resize(number_raw, NULL);
-        this->stat_blocks_.resize(number_raw);
-        this->mmap_parents_.resize(number_raw, NULL);
-
-        this->size_block_x_ = size_x;
-        this->size_block_y_ = size_y;
-        this->size_block_z_ = size_z;
-        this->number_block_side_ = (int)(pow(number_raw, 1.0/3.0) + 0.5);
-
-        //create directory
-        mkdir(directory_parent, 0755);
-        mkdir(directory_set, 0755);
-
-        //remember the original working directory
-        char original_directory[200] = {0};
-        getcwd(original_directory, 200);
-        chdir(directory_blocks);
-
-        //mapping raw blocks
-        #pragma omp parallel for
-        for(int i=0;i<number_raw;++i){
-            char address_raw[200] = {0};
-            int fd_raw = -1;
-
-            sprintf(address_raw, "%d.raw", i);
-            fd_raw = open(address_raw, O_RDONLY);
-            fstat(fd_raw, &stat_blocks_[i]);
-
-            this->mmap_blocks_[i] = (uint16_t*)mmap(NULL, stat_blocks_[i].st_size, PROT_READ, MAP_SHARED, fd_raw, 0);
-            if(this->mmap_blocks_[i] == MAP_FAILED){
-                cerr << i <<  " MMAP ERROR!" <<endl;
-                close(fd_raw);
-                exit(-1);
-            }
-
-            close(fd_raw);
-        }
-        chdir(original_directory);
-        chdir(directory_parent);
-
-        //mapping parent files
-        this->size_parent_ = sizeof(long long int) * size_block_x_ * size_block_y_ * size_block_z_ ;
-        #pragma omp parallel for
-        for(int i=0;i<number_raw;++i){
-
-            char address_parent[200] = {0};
-            int fd_parent = -1;
-
-            sprintf(address_parent, "%d.prt", i);
-
-            //create the parent file with the currect file size
-            fd_parent = open(address_parent, O_RDWR | O_CREAT, 0644);
-            lseek(fd_parent, this->size_parent_+1, SEEK_SET);
-            write(fd_parent, "", 1);
-            lseek(fd_parent, 0, SEEK_SET);
-
-            //mapping
-            this->mmap_parents_[i] = (long long int*)mmap(NULL, this->size_parent_, PROT_WRITE | PROT_READ, MAP_SHARED, fd_parent, 0);
-            if(this->mmap_parents_[i] == MAP_FAILED){
-                cerr << i << "th PARENT MMAP ERROR!" <<endl;
-                close(fd_parent);
-                exit(-1);
-            }
-
-            close(fd_parent);
-        }
-
-        chdir(original_directory);
-    }
-
-    ~multi_block(){
-        #pragma omp parallel for
-        for(unsigned int i=0;i<this->mmap_blocks_.size();++i){
-            munmap(this->mmap_blocks_[i], this->stat_blocks_[i].st_size);
-            munmap(this->mmap_parents_[i], this->size_parent_);
-        }
-    }
-
-    int value(int x, int y, int z){
-        block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
-        coor.convert_from(x, y, z);
-
-        return (int)this->mmap_blocks_[coor.index_block][coor.index_remain];
-    }
-
-    void write_parent(int x, int y, int z, long long int parent){
-        block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
-        coor.convert_from(x, y, z);
-        this->mmap_parents_[coor.index_block][coor.index_remain] = parent;
-        return ;
-    }
-
-    void init_parent(void){
+    void init_parent_(void){
 
         int size_parent_block = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
         int number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
@@ -228,7 +124,77 @@ public:
         return;
     }
 
-    void reindex();
+    void init_size_(void){
+
+        int size_size_block = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
+        int number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
+        progressbar *progress = progressbar_new("Init size", number_block);
+
+        for(int index_block=0; index_block < number_block; ++index_block){
+            #pragma omp parallel for
+            for(int index_remain=0; index_remain < size_size_block; ++index_remain){
+                this->mmap_size_[index_block][index_remain] = (unsigned int)1;
+            }
+            progressbar_inc(progress);
+        }
+        this->mmap_size_[0][0] = (unsigned int)0;
+
+        progressbar_finish(progress);
+        return;
+    }
+
+public:
+
+    multi_block(){
+        this->mmap_blocks_.clear();
+        this->stat_blocks_.clear();
+        this->mmap_parents_.clear();
+        this->directory_blocks_.clear();
+        this->directory_parent_.clear();
+    }
+
+    multi_block(const char* directory_blocks, int number_raw,
+            int size_x, int size_y, int size_z, const char* directory_parent, const char* directory_set);
+
+    ~multi_block(){
+        #pragma omp parallel for
+        for(unsigned int i=0;i<this->mmap_blocks_.size();++i){
+            munmap(this->mmap_blocks_[i], this->stat_blocks_[i].st_size);
+            munmap(this->mmap_parents_[i], this->size_parent_);
+            munmap(this->mmap_size_[i], this->size_size_);
+        }
+    }
+
+    int value(int x, int y, int z){
+        if( x == 0 && y == 0 && z == 0)
+            return 0;
+        block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
+        coor.convert_from(x, y, z);
+
+        return (int)this->mmap_blocks_[coor.index_block][coor.index_remain];
+    }
+
+    void write_parent(int x, int y, int z, long long int parent){
+        block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
+        coor.convert_from(x, y, z);
+        this->mmap_parents_[coor.index_block][coor.index_remain] = parent;
+        return ;
+    }
+
+    void write_size(int x, int y, int z, unsigned int size){
+        block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
+        coor.convert_from(x, y, z);
+        this->mmap_size_[coor.index_block][coor.index_remain] = size;
+        return ;
+    }
+
+    void init_union_find(void){
+        this->init_parent_();
+        this->init_size_();
+        return;
+    }
+
+    void reindex(int threshold_size = 20);
 
     void union_all6(int threshold=17000);
 };
