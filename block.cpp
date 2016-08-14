@@ -202,7 +202,7 @@ void multi_block::reindex(int threshold_size){
     return;
 }
 
-void multi_block::union_all6(int threshold){
+void multi_block::union_all6(int threshold, int threshold_set_size){
 
     const int total_number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
     const int total_remain = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
@@ -276,7 +276,7 @@ void multi_block::union_all6(int threshold){
     progressbar_finish(progress);
 
     //reindexing to .set
-    this->reindex();
+    this->reindex(threshold_set_size);
 
     return ;
 }

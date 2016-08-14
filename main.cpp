@@ -3,20 +3,24 @@
 #include <cstdio>
 #include <vector>
 #include <dirent.h>
+#include <fstream>
 
 #include "block.h"
 
-//#define PREFIX_RAW "/Users/toosyou/ext/Research/neuron_data/raw_noth/"
-#define PREFIX_RAW "/Users/toosyou/ext/Research/neuron_data/GH146plus-M/reconstructed/raw64/"
-#define PREFIX_PRTS "prts/"
-#define PREFIX_SETS "sets/"
-
 using namespace std;
 
-int main(){
+int main(int argc, char* argv[]){
 
-    multi_block blocks(PREFIX_RAW, 1, 433, 433, 261, PREFIX_PRTS, PREFIX_SETS);
-    blocks.union_all6(23841);
+    if(argc != 2){
+        cerr << "usage: ./blocked_union configure_file_address" <<endl;
+        return -1;
+    }
+
+    //read configure file
+    block_config configure(argv[1]);
+
+    multi_block blocks(configure);
+    blocks.union_all6(configure.threshold_background, configure.threshold_set_size);
 
     return 0;
 }

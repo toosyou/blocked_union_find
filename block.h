@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <math.h>
+#include <fstream>
 #include "progressbar.h"
 #include "statusbar.h"
 #include "block_coordinate.h"
@@ -25,7 +26,7 @@ class block_vector{
 
     vector<T> value_;
 
-public:
+    public:
 
     block_vector(){
         this->value_.clear();
@@ -52,11 +53,54 @@ public:
 
 };
 
+struct block_config{
+    char prefix_raw[200];
+    int number_block;
+    int size_x;
+    int size_y;
+    int size_z;
+    char prefix_prts[200];
+    char prefix_sets[200];
+    int threshold_background;
+    int threshold_set_size;
+
+    block_config(){
+        this->number_block = 0;
+        this->size_x = 0;
+        this->size_y = 0;
+        this->size_z = 0;
+        this->threshold_background = 0;
+        this->threshold_set_size = 0;
+    }
+
+    block_config(const char *address_config){
+        this->read_config(address_config);
+    }
+
+    void read_config(const char *address_config){
+        fstream strm_config(address_config);
+        string dontcare;
+
+        strm_config >> dontcare >> this->prefix_raw;
+        strm_config >> dontcare >> this->number_block;
+        strm_config >> dontcare >> this->size_x;
+        strm_config >> dontcare >> this->size_y;
+        strm_config >> dontcare >> this->size_z;
+        strm_config >> dontcare >> this->prefix_prts;
+        strm_config >> dontcare >> this->prefix_sets;
+        strm_config >> dontcare >> this->threshold_background;
+        strm_config >> dontcare >> this->threshold_set_size;
+
+        strm_config.close();
+        return;
+    }
+};
+
 class multi_block{
     vector<uint16_t*> mmap_blocks_;
     vector<struct stat> stat_blocks_;
     block_vector<long long int*> mmap_parents_;
-    block_vector<unsigned int*> mmap_size_;
+    vector<unsigned int*> mmap_size_;
 
     int size_block_x_;
     int size_block_y_;
@@ -143,7 +187,7 @@ class multi_block{
         return;
     }
 
-public:
+    public:
 
     multi_block(){
         this->mmap_blocks_.clear();
@@ -152,6 +196,10 @@ public:
         this->directory_blocks_.clear();
         this->directory_parent_.clear();
     }
+
+    multi_block(block_config configure):multi_block(configure.prefix_raw, configure.number_block,
+                                            configure.size_x, configure.size_y, configure.size_z,
+                                            configure.prefix_prts, configure.prefix_sets){}
 
     multi_block(const char* directory_blocks, int number_raw,
             int size_x, int size_y, int size_z, const char* directory_parent, const char* directory_set);
@@ -194,9 +242,9 @@ public:
         return;
     }
 
-    void reindex(int threshold_size = 20);
+    void reindex(int threshold_size);
 
-    void union_all6(int threshold=17000);
+    void union_all6(int threshold=17000, int threshold_set_size=20);
 };
 
 #endif
