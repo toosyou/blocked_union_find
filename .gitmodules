@@ -3,4 +3,4 @@
 	url = https://github.com/doches/progressbar.git
 [submodule "cpp-lru-cache4file"]
 	path = cpp-lru-cache4file
-	url = git@github.com:toosyou/cpp-lru-cache4file.git
+	url = https://github.com/toosyou/cpp-lru-cache4file.git
