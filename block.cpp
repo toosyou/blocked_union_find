@@ -138,11 +138,13 @@ void multi_block::reindex(int threshold_size){
     const int total_remain = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
     const int total_blocks = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
     long long int index_sofar = 1;
-    map<long long int, long long int> index_map;
-    map<long long int, string> index_file; //new index to file
+    map<long long int, long long int> index_map; //index_prt to index_new
+    cache::lru_cache<long long int, FILE*, file_expire> cache_file(150); //index_new to expriable_file
     map<long long int, long long int>::iterator it_index_map;
     block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
-    index_map[0ll] = 0;
+
+    //init
+    index_map[0ll] = 0ll; //background
 
     progressbar *progress = progressbar_new("reindexing", total_blocks);
 
@@ -157,30 +159,43 @@ void multi_block::reindex(int threshold_size){
             long long int value = this->mmap_parents_[index_block][index_remain];
             coor.convert_from(value);
 
+            int size_set = this->mmap_size_[coor.index_block][coor.index_remain];
+
             //it's not bigger enoough or it's background
-            if( this->mmap_size_[coor.index_block][coor.index_remain] < threshold_size || value == 0 )
+            if( value == 0 || size_set < threshold_size  )
                 continue;
 
             it_index_map = index_map.find(value);
 
             if(it_index_map != index_map.end()){//find
 
-                string address_file = index_file[ it_index_map->second ];
-                FILE *file = fopen(address_file.c_str(), "r+b");
+                long long int index_new = it_index_map->second;
+                //find expirable file in cache
+                FILE* file = NULL;
+                try{
+                    file = cache_file.get(index_new); //in the cache just use it
+                }catch(const char* msg){// not in the cache, reopen
+                    cout << "cache failed " << index_new <<endl;
 
+                    char address_new[100] = {0};
+                    sprintf(address_new, "%lld.set", index_new);
+
+                    file = fopen(address_new, "r+b");
+                    cache_file.put(index_new, file);
+                }
                 this->append_xyz_(index_block, index_remain, file);
 
-                fclose(file);
-
             }else{// not find
-                index_map[value] = index_sofar++;
+
+                long long int index_new = index_sofar++;
+                index_map[value] = index_new;
 
                 //data to output
                 int new_size = 0;
 
                 //create new file
                 char address_new[100] = {0};
-                sprintf(address_new, "%lld.set", index_map[value]);
+                sprintf(address_new, "%lld.set", index_new);
 
                 FILE* file_new = fopen(address_new, "w+b");
                 fwrite( &new_size, sizeof(int), 1, file_new );
@@ -188,10 +203,8 @@ void multi_block::reindex(int threshold_size){
                 //write xyz
                 this->append_xyz_(index_block, index_remain, file_new);
 
-                fclose(file_new);
-
-                //update the file name
-                index_file[ index_map[value] ] = string(address_new);
+                //update FILE* to lru_cache
+                cache_file.put(index_new, file_new);
             }
         }
 
@@ -199,67 +212,17 @@ void multi_block::reindex(int threshold_size){
     }
     progressbar_finish(progress);
     chdir(original_directory);
+
+    //cache_file will be closed with destructor and delete_struct in cache_file
+
     return;
 }
 
-void multi_block::union_all6(int threshold, int threshold_set_size){
-
+void multi_block::find_all(void){
     const int total_number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
     const int total_remain = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
-    const int total_size_x = this->size_block_x_ * this->number_block_side_;
-    const int total_size_y = this->size_block_y_ * this->number_block_side_;
-    const int total_size_z = this->size_block_z_ * this->number_block_side_;
     block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
-
-    //init
-    this->init_union_find();
-
-    progressbar *progress = progressbar_new("union all6", total_number_block);
-
-    for(int index_block=0;index_block<total_number_block;++index_block){
-        for(int index_remain=0;index_remain<total_remain;++index_remain){
-            coor.convert_from(index_block, index_remain);
-            int x = coor.x;
-            int y = coor.y;
-            int z = coor.z;
-
-            //it's below threshold wont be connected
-            if(this->value(x, y, z) < threshold){
-                this->write_parent(x, y, z, 0ll);
-                this->write_size(x, y, z, (unsigned int)0);
-                continue;
-            }
-
-            //surrounding 6 points
-            for(int dx=-1;dx<=1;++dx){
-                for(int dy=-1;dy<=1;++dy){
-                    for(int dz=-1;dz<=1;++dz){
-
-                        //only check surrounding 6 points
-                        if( abs(dx) + abs(dy) + abs(dz) != 1 )
-                            continue;
-                        //check boundary
-                        if( x+dx < 0 || x+dx >= total_size_x ||
-                                y+dy < 0 || y+dy >= total_size_y ||
-                                z+dz < 0 || z+dz >= total_size_z)
-                            continue;
-
-                        //threshold check
-                        if( this->value(x+dx, y+dy, z+dz) < threshold )
-                            continue;
-
-                        this->union_parent_(x, y, z, x+dx, y+dy, z+dz);
-
-                    }
-                }
-            }//surrounding 6 points
-
-        }
-        progressbar_inc(progress);
-    }
-    progressbar_finish(progress);
-
-    progress = progressbar_new("find all again", total_number_block);
+    progressbar *progress = progressbar_new("find all again", total_number_block);
 
     //find all again
     for(int index_block=0; index_block < total_number_block; ++index_block){
@@ -268,12 +231,158 @@ void multi_block::union_all6(int threshold, int threshold_set_size){
             int x = coor.x;
             int y = coor.y;
             int z = coor.z;
-            if(this->value(x, y, z) >= threshold)
+            if(this->mmap_parents_[index_block][index_remain] != 0)
                 this->find_parent_( x, y, z );
         }
         progressbar_inc(progress);
     }
     progressbar_finish(progress);
+
+    return;
+}
+
+void multi_block::union_block6(int threshold, int index_block){
+
+    const int total_number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
+    const int total_remain = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
+    const int total_size_x = this->size_block_x_ * this->number_block_side_;
+    const int total_size_y = this->size_block_y_ * this->number_block_side_;
+    const int total_size_z = this->size_block_z_ * this->number_block_side_;
+    block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
+
+    for(int index_remain=0; index_remain<total_remain; ++index_remain){
+        coor.convert_from(index_block, index_remain);
+        int x = coor.x;
+        int y = coor.y;
+        int z = coor.z;
+
+        //it's below threshold wont be connected
+        if(this->value(x, y, z) < threshold){
+            this->write_parent(x, y, z, 0ll);
+            this->write_size(x, y, z, (unsigned int)0);
+            continue;
+        }
+
+        //surrounding 6 points
+        //which only checks the right, front and underneath of every point
+        for(int dx=0;dx<=1;++dx){
+            for(int dy=0;dy<=1;++dy){
+                for(int dz=0;dz<=1;++dz){
+
+                    //only check surrounding 6 points
+                    if( abs(dx) + abs(dy) + abs(dz) != 1 )
+                        continue;
+                    //check boundary
+                    if( x+dx < 0 || x+dx >= total_size_x ||
+                            y+dy < 0 || y+dy >= total_size_y ||
+                            z+dz < 0 || z+dz >= total_size_z)
+                        continue;
+
+                    //check index_block
+                    coor.convert_from(x+dx, y+dy, z+dz);
+                    if(coor.index_block != index_block) // out of block
+                        continue;
+
+                    //check threshold
+                    if( this->value(x+dx, y+dy, z+dz) < threshold )
+                        continue;
+
+                    this->union_parent_(x, y, z, x+dx, y+dy, z+dz);
+                }
+            }
+        }//surrounding 6 points
+    }
+    return;
+}
+
+//TODO: union between blocks
+void multi_block::union_all6(int threshold, int threshold_set_size){
+
+    const int total_number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
+    const int total_remain = this->size_block_x_ * this->size_block_y_ * this->size_block_z_;
+    const int total_size_x = this->size_block_x_ * this->number_block_side_;
+    const int total_size_y = this->size_block_y_ * this->number_block_side_;
+    const int total_size_z = this->size_block_z_ * this->number_block_side_;
+
+    //init
+    this->init_union_find();
+
+    //union all blocks separately
+    progressbar *progress = progressbar_new("union all blocks6", total_number_block);
+
+    #pragma omp parallel for
+    for(int index_block=0; index_block<total_number_block; ++index_block){
+        this->union_block6(threshold, index_block);
+
+        #pragma omp critical
+        progressbar_inc(progress);
+    }
+    progressbar_finish(progress);
+
+    //union between blocks - WIP
+    progress = progressbar_new("union between blocks6", total_number_block);
+
+    for(int index_block_x=0; index_block_x<number_block_side_; ++index_block_x){
+        for(int index_block_y=0; index_block_y<number_block_side_; ++index_block_y){
+            for(int index_block_z=0; index_block_z<number_block_side_; ++index_block_z){
+                block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
+
+                //union the block on the right
+                if(index_block_x != number_block_side_-1){
+                    for(int rmy=0; rmy<size_block_y_; ++rmy){
+                        for(int rmz=0; rmz<size_block_z_; ++rmz){
+                            coor.convert_from( index_block_x, index_block_y, index_block_z, size_block_x_-1, rmy, rmz );
+                            int x = coor.x;
+                            int y = coor.y;
+                            int z = coor.z;
+
+                            if(this->value(x,y,z) >= threshold && this->value(x+1,y,z) >= threshold){
+                                this->union_parent_(x, y, z, x+1, y, z);
+                            }
+                        }
+                    }
+                }
+
+                //union the block on the front
+                if(index_block_y != number_block_side_-1){
+                    for(int rmx=0; rmx<size_block_x_; ++rmx){
+                        for(int rmz=0; rmz<size_block_z_; ++rmz){
+                            coor.convert_from( index_block_x, index_block_y, index_block_z, rmx, size_block_y_-1, rmz );
+                            int x = coor.x;
+                            int y = coor.y;
+                            int z = coor.z;
+
+                            if(this->value(x,y,z) >= threshold && this->value(x,y+1,z) >= threshold){
+                                this->union_parent_(x, y, z, x, y+1, z);
+                            }
+                        }
+                    }
+                }
+
+                //union the block on the underneath
+                if(index_block_z != number_block_side_-1){
+                    for(int rmx=0; rmx<size_block_x_; ++rmx){
+                        for(int rmy=0; rmy<size_block_y_; ++rmy){
+                            coor.convert_from( index_block_x, index_block_y, index_block_z, rmx, rmy, size_block_z_-1 );
+                            int x = coor.x;
+                            int y = coor.y;
+                            int z = coor.z;
+
+                            if(this->value(x,y,z) >= threshold && this->value(x,y,z+1) >= threshold){
+                                this->union_parent_(x, y, z, x, y, z+1);
+                            }
+                        }
+                    }
+                }
+
+                progressbar_inc(progress);
+            }
+        }
+    }
+    progressbar_finish(progress);
+
+    //find all again
+    this->find_all();
 
     //reindexing to .set
     this->reindex(threshold_set_size);

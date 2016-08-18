@@ -21,6 +21,9 @@ struct block_coordinate{
     int y;
     int z;
     long long int index_whole;
+    int index_block_x;
+    int index_block_y;
+    int index_block_z;
 
     block_coordinate(){
 
@@ -37,14 +40,14 @@ struct block_coordinate{
         this->new_size_block_z = (long long int)number_block_side * (long long int)size_block_z;
     }
 
-    void convert_from(int input_x, int input_y, int input_z){
+    void convert_from(const int input_x, const int input_y, const int input_z){
         this->x = input_x;
         this->y = input_y;
         this->z = input_z;
 
-        int index_block_x = input_x / this->size_block_x;
-        int index_block_y = input_y / this->size_block_y;
-        int index_block_z = input_z / this->size_block_z;
+        this->index_block_x = input_x / this->size_block_x;
+        this->index_block_y = input_y / this->size_block_y;
+        this->index_block_z = input_z / this->size_block_z;
         this->index_block = index_block_z * this->number_block_side * this->number_block_side +
             index_block_y * this->number_block_side +
             index_block_x;
@@ -61,16 +64,16 @@ struct block_coordinate{
         return;
     }
 
-    void convert_from(long long int whole){
+    void convert_from(const long long int whole){
         int new_size_block2 = new_size_block_y * new_size_block_x;
         this->index_whole = whole;
         this->z = index_whole / (new_size_block2);
         this->y = (index_whole % new_size_block2)/ new_size_block_x;
         this->x = index_whole % new_size_block_x;
 
-        int index_block_x = x / this->size_block_x;
-        int index_block_y = y / this->size_block_y;
-        int index_block_z = z / this->size_block_z;
+        this->index_block_x = x / this->size_block_x;
+        this->index_block_y = y / this->size_block_y;
+        this->index_block_z = z / this->size_block_z;
         this->index_block = index_block_z * this->number_block_side * this->number_block_side +
             index_block_y * this->number_block_side +
             index_block_x;
@@ -92,9 +95,9 @@ struct block_coordinate{
         int number_block_side2 = this->number_block_side * this->number_block_side;
         int size_block2 = this->size_block_x * this->size_block_y;
 
-        int index_block_z = index_block / number_block_side2;
-        int index_block_y = ( index_block % number_block_side2 ) / number_block_side;
-        int index_block_x = index_block % number_block_side;
+        this->index_block_z = index_block / number_block_side2;
+        this->index_block_y = ( index_block % number_block_side2 ) / number_block_side;
+        this->index_block_x = index_block % number_block_side;
 
         int remained_z = index_remain / size_block2;
         int remained_y = (index_remain % size_block2) / size_block_x;
@@ -106,6 +109,28 @@ struct block_coordinate{
 
         this->index_whole = (long long int)z * new_size_block_y * new_size_block_x + (long long int)y * new_size_block_x + (long long int)x;
 
+    }
+
+    void convert_from(const int ibx, const int iby, const int ibz, const int rmx, const int rmy, const int rmz){
+
+        this->index_block_x = ibx;
+        this->index_block_y = iby;
+        this->index_block_z = ibz;
+
+        this->index_block = index_block_z * this->number_block_side * this->number_block_side +
+            index_block_y * this->number_block_side +
+            index_block_x;
+
+        this->index_remain = rmz * this->size_block_x * this->size_block_y +
+                            rmy * this->size_block_x +
+                            rmx;
+
+        this->x = index_block_x * size_block_x + rmx;
+        this->y = index_block_y * size_block_y + rmy;
+        this->z = index_block_z * size_block_z + rmz;
+
+        this->index_whole = (long long int)z * new_size_block_y * new_size_block_x + (long long int)y * new_size_block_x + (long long int)x;
+        
     }
 
     bool operator==(block_coordinate &b){

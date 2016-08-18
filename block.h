@@ -15,11 +15,16 @@
 #include "statusbar.h"
 #include "block_coordinate.h"
 #include <map>
-
-using namespace std;
-
+#include <lrucache.hpp>
 
 long long int index_parent(int size_block, int number_block_side, int index_block, int index_reamin);
+
+struct file_expire{
+    void expire(FILE* file){
+        fclose(file);
+        return;
+    }
+};
 
 template <class T>
 class block_vector{
@@ -243,6 +248,10 @@ class multi_block{
     }
 
     void reindex(int threshold_size);
+
+    void find_all(void);
+
+    void union_block6(int threshold, int index_block);
 
     void union_all6(int threshold=17000, int threshold_set_size=20);
 };
