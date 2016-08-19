@@ -143,6 +143,9 @@ void multi_block::reindex(int threshold_size){
     map<long long int, long long int>::iterator it_index_map;
     block_coordinate coor(this->size_block_x_, this->size_block_y_, this->size_block_z_, this->number_block_side_);
 
+    int cache_hit = 0;
+    int cache_mis = 0;
+
     //init
     index_map[0ll] = 0ll; //background
 
@@ -174,14 +177,15 @@ void multi_block::reindex(int threshold_size){
                 FILE* file = NULL;
                 try{
                     file = cache_file.get(index_new); //in the cache just use it
-                }catch(const char* msg){// not in the cache, reopen
-                    cout << "cache failed " << index_new <<endl;
+                    cache_hit++;
+                }catch(std::range_error re){// not in the cache, reopen
 
                     char address_new[100] = {0};
                     sprintf(address_new, "%lld.set", index_new);
 
                     file = fopen(address_new, "r+b");
                     cache_file.put(index_new, file);
+                    cache_mis++;
                 }
                 this->append_xyz_(index_block, index_remain, file);
 
@@ -214,6 +218,9 @@ void multi_block::reindex(int threshold_size){
     chdir(original_directory);
 
     //cache_file will be closed with destructor and delete_struct in cache_file
+
+    //output missing rate
+    cout << "lru-cache missing rate: " << cache_mis << "/" << cache_hit+cache_mis << " = " << (double)cache_mis/(double)(cache_hit+cache_mis) <<endl;
 
     return;
 }
