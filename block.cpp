@@ -325,7 +325,7 @@ void multi_block::union_all6(int threshold, int threshold_set_size){
     }
     progressbar_finish(progress);
 
-    //union between blocks - WIP
+    //union between blocks
     progress = progressbar_new("union between blocks6", total_number_block);
 
     for(int index_block_x=0; index_block_x<number_block_side_; ++index_block_x){
