@@ -302,7 +302,6 @@ void multi_block::union_block6(int threshold, int index_block){
     return;
 }
 
-//TODO: union between blocks
 void multi_block::union_all6(int threshold, int threshold_set_size){
 
     const int total_number_block = this->number_block_side_ * this->number_block_side_ * this->number_block_side_;
